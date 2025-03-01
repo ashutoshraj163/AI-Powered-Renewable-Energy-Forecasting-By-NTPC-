@@ -10,7 +10,6 @@ from pydantic import BaseModel
 
 app = FastAPI(title="Energy Generation Forecast API")
 weather_service = WeatherService()
-
 class ForecastResponse(BaseModel):
     location_name: str
     timezone: str
