@@ -13,9 +13,42 @@ from dotenv import load_dotenv
 import json
 import folium
 from streamlit_folium import st_folium
+from theme import get_theme_colors, get_streamlit_theme_css
 
 # Load environment variables
 load_dotenv()
+
+# Initialize theme in session state
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'light'
+
+def toggle_theme():
+    st.session_state.theme = 'dark' if st.session_state.theme == 'light' else 'light'
+    st.rerun()
+
+# Get theme colors
+theme_colors = get_theme_colors(st.session_state.theme)
+
+# Set page config - must be the first Streamlit command
+st.set_page_config(
+    page_title="Energy Generation Forecast",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Apply theme CSS
+st.markdown(get_streamlit_theme_css(theme_colors), unsafe_allow_html=True)
+
+# Add theme toggle in sidebar
+with st.sidebar:
+    st.write("")  # Add some spacing
+    theme_col1, theme_col2 = st.columns([3, 1])
+    with theme_col1:
+        st.write("Theme:")
+    with theme_col2:
+        if st.button("🌓", help="Toggle light/dark mode"):
+            toggle_theme()
+    st.write("---")  # Add separator
 
 def kalman_filter_solar(forecast_values, initial_state_mean=None, Q=0.1, R=1.0):
     """
@@ -76,9 +109,6 @@ def kalman_filter_wind(forecast_values, initial_state_mean=None, Q=0.2, R=1.5):
 
 # Initialize weather service
 weather_service = WeatherService()
-
-# Set page config
-st.set_page_config(page_title="Energy Generation Forecast", layout="wide")
 
 # Title and description
 st.title("AI-Powered Energy Generation Forecast")
@@ -415,44 +445,53 @@ if st.button("Generate Forecast"):
         # Weather conditions plot with improved styling
         fig.add_trace(
             go.Scatter(x=weather_data.index, y=weather_data['temperature'],
-                      name="Temperature (°C)", line=dict(width=2)), row=1, col=1
+                      name="Temperature (°C)", 
+                      line=dict(width=2, color='#e74c3c')), row=1, col=1
         )
         fig.add_trace(
             go.Scatter(x=weather_data.index, y=weather_data['wind_speed'],
-                      name="Wind Speed (m/s)", line=dict(width=2)), row=1, col=1
+                      name="Wind Speed (m/s)", 
+                      line=dict(width=2, color='#3498db')), row=1, col=1
         )
         fig.add_trace(
             go.Scatter(x=weather_data.index, y=weather_data['solar_irradiance']/100,
-                      name="Solar Irradiance (100 W/m²)", line=dict(width=2)), row=1, col=1
+                      name="Solar Irradiance (100 W/m²)", 
+                      line=dict(width=2, color='#f1c40f')), row=1, col=1
         )
         
-        # Generation plots with confidence intervals and improved styling
+        # Generation plots with improved styling
         if show_confidence_interval:
             fig.add_trace(
                 go.Scatter(x=weather_data.index, y=weather_data['solar_ci_upper'],
-                          fill=None, mode='lines', line_color='rgba(255,127,14,0.1)',
+                          fill=None, mode='lines', 
+                          line_color=theme_colors['solar_color'].replace('1)', '0.1)'),
                           showlegend=False), row=2, col=1)
             fig.add_trace(
                 go.Scatter(x=weather_data.index, y=weather_data['solar_ci_lower'],
-                          fill='tonexty', mode='lines', line_color='rgba(255,127,14,0.1)',
+                          fill='tonexty', mode='lines', 
+                          line_color=theme_colors['solar_color'].replace('1)', '0.1)'),
                           showlegend=False), row=2, col=1)
             fig.add_trace(
                 go.Scatter(x=weather_data.index, y=weather_data['wind_ci_upper'],
-                          fill=None, mode='lines', line_color='rgba(44,160,44,0.1)',
+                          fill=None, mode='lines', 
+                          line_color=theme_colors['wind_color'].replace('1)', '0.1)'),
                           showlegend=False), row=2, col=1)
             fig.add_trace(
                 go.Scatter(x=weather_data.index, y=weather_data['wind_ci_lower'],
-                          fill='tonexty', mode='lines', line_color='rgba(44,160,44,0.1)',
+                          fill='tonexty', mode='lines', 
+                          line_color=theme_colors['wind_color'].replace('1)', '0.1)'),
                           showlegend=False), row=2, col=1)
         
         fig.add_trace(
             go.Scatter(x=weather_data.index, y=weather_data['solar_generation'],
-                      name="Solar Generation (MW)", line=dict(width=2, color='rgb(255,127,14)')), 
+                      name="Solar Generation (MW)", 
+                      line=dict(width=2, color=theme_colors['solar_color'])), 
             row=2, col=1
         )
         fig.add_trace(
             go.Scatter(x=weather_data.index, y=weather_data['wind_generation'],
-                      name="Wind Generation (MW)", line=dict(width=2, color='rgb(44,160,44)')), 
+                      name="Wind Generation (MW)", 
+                      line=dict(width=2, color=theme_colors['wind_color'])), 
             row=2, col=1
         )
         
@@ -460,27 +499,55 @@ if st.button("Generate Forecast"):
         fig.add_trace(
             go.Scatter(x=weather_data.index, y=weather_data['total_generation'],
                       name="Total Generation (MW)", fill='tozeroy',
-                      line=dict(width=2)), row=3, col=1
+                      line=dict(width=2, color='#9b59b6')), row=3, col=1
         )
         
-        # Update layout with improved styling
+        # Update layout with enhanced theme-aware styling
         fig.update_layout(
             height=800,
             showlegend=True,
-            plot_bgcolor='white',
-            paper_bgcolor='white',
+            plot_bgcolor=theme_colors['plot_bg'],
+            paper_bgcolor=theme_colors['paper_bg'],
             hovermode='x unified',
             title=dict(
                 text=f"Energy Generation Forecast for {location_info['location_name']}",
                 x=0.5,
                 xanchor='center',
-                font=dict(color='black')
+                font=dict(color=theme_colors['text_color'])
             ),
-            font=dict(color='black'),  # Set all font color to black
-            legend=dict(font=dict(color='black'))
+            font=dict(color=theme_colors['text_color']),
+            legend=dict(
+                font=dict(color=theme_colors['legend_text']),
+                bgcolor='rgba(0,0,0,0)',
+                bordercolor='rgba(0,0,0,0)'
+            )
         )
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', tickfont=dict(color='black'))
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', tickfont=dict(color='black'))
+        
+        # Update subplot titles
+        for i in range(len(fig.layout.annotations)):
+            fig.layout.annotations[i].font.color = theme_colors['subplot_title']
+        
+        # Update axes with enhanced styling
+        fig.update_xaxes(
+            showgrid=True, 
+            gridwidth=1, 
+            gridcolor=theme_colors['grid_color'],
+            tickfont=dict(color=theme_colors['axis_text']),
+            ticklen=5,
+            showline=True,
+            linewidth=1,
+            linecolor=theme_colors['grid_color']
+        )
+        fig.update_yaxes(
+            showgrid=True, 
+            gridwidth=1, 
+            gridcolor=theme_colors['grid_color'],
+            tickfont=dict(color=theme_colors['axis_text']),
+            ticklen=5,
+            showline=True,
+            linewidth=1,
+            linecolor=theme_colors['grid_color']
+        )
         st.plotly_chart(fig, use_container_width=True)
         
         # Display enhanced statistics
@@ -560,6 +627,7 @@ if st.button("Generate Forecast"):
                 marker_colors=['rgba(255,127,14,0.8)', 'rgba(44,160,44,0.8)']
             )])
             
+            # Update energy mix figure with theme
             energy_mix_fig.update_layout(
                 showlegend=False,
                 plot_bgcolor='rgba(0,0,0,0)',
@@ -570,6 +638,7 @@ if st.button("Generate Forecast"):
                     text=f'Total<br>{total_generation:.1f} MWh',
                     x=0.5, y=0.5,
                     font_size=14,
+                    font_color=theme_colors['text_color'],
                     showarrow=False
                 )]
             )
