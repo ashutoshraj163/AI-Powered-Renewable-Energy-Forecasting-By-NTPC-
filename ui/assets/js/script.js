@@ -36,7 +36,7 @@ $(document).ready(function () {
             settings: {
                 slidesToShow: 1
             }
-        }, ]
+        },]
     });
 });
 
