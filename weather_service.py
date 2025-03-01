@@ -8,6 +8,7 @@ from geopy.geocoders import Nominatim
 import pytz
 import numpy as np
 
+
 load_dotenv()
 
 class WeatherService:
