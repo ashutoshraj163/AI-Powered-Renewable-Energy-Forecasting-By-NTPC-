@@ -344,11 +344,14 @@ if st.button("Generate Forecast"):
             title=dict(
                 text=f"Energy Generation Forecast for {location_info['location_name']}",
                 x=0.5,
-                xanchor='center'
-            )
+                xanchor='center',
+                font=dict(color='black')
+            ),
+            font=dict(color='black'),  # Set all font color to black
+            legend=dict(font=dict(color='black'))
         )
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', tickfont=dict(color='black'))
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', tickfont=dict(color='black'))
         st.plotly_chart(fig, use_container_width=True)
         
         # Display enhanced statistics
@@ -382,11 +385,58 @@ if st.button("Generate Forecast"):
             st.write("Energy Mix")
             total_solar = abs(weather_data['solar_generation'].sum())
             total_wind = abs(weather_data['wind_generation'].sum())
-            energy_mix = pd.DataFrame({
-                'Source': ['Solar', 'Wind'],
-                'Generation (MWh)': [total_solar, total_wind]
-            })
-            st.bar_chart(energy_mix.set_index('Source'))
+            total_generation = total_solar + total_wind
+            
+            # Calculate percentages
+            solar_percentage = (total_solar / total_generation) * 100
+            wind_percentage = (total_wind / total_generation) * 100
+            
+            # Create enhanced energy mix visualization using plotly
+            energy_mix_fig = go.Figure()
+            
+            # Add bars with improved styling
+            energy_mix_fig.add_trace(go.Bar(
+                x=['Solar', 'Wind'],
+                y=[total_solar, total_wind],
+                text=[f'{total_solar:.1f} MWh<br>({solar_percentage:.1f}%)', 
+                      f'{total_wind:.1f} MWh<br>({wind_percentage:.1f}%)'],
+                textposition='auto',
+                name='Generation',
+                marker_color=['rgba(255,127,14,0.8)', 'rgba(44,160,44,0.8)'],
+                hovertemplate='%{x}<br>Generation: %{y:.1f} MWh<br>Share: %{text}<extra></extra>'
+            ))
+            
+            # Update layout with improved styling
+            energy_mix_fig.update_layout(
+                title=dict(
+                    text='Energy Generation Mix',
+                    x=0.5,
+                    xanchor='center',
+                    font=dict(size=16, color='black')
+                ),
+                showlegend=False,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                height=400,
+                yaxis=dict(
+                    title='Generation (MWh)',
+                    gridcolor='LightGray',
+                    title_font=dict(color='black'),
+                    tickfont=dict(color='black')
+                ),
+                xaxis=dict(
+                    title='Source',
+                    title_font=dict(color='black'),
+                    tickfont=dict(color='black')
+                ),
+                bargap=0.3
+            )
+            
+            # Add a more prominent grid
+            energy_mix_fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+            
+            # Display the enhanced plot
+            st.plotly_chart(energy_mix_fig, use_container_width=True)
         
         # API Integration Information
         st.subheader("API Integration")
