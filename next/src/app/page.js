@@ -47,7 +47,6 @@ export default function EnergyDashboard() {
   const handleDemoClick = () => {
     window.open('http://localhost:8501/');
   };
-
   const metrics = [
     {
       icon: Wind,
