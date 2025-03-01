@@ -96,6 +96,7 @@ response = requests.get(
 forecast = response.json()
 ```
 
+
 ## API Documentation
 
 Once the server is running, you can access:
