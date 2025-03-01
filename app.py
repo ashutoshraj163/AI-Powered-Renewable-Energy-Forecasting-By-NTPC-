@@ -10,6 +10,8 @@ from weather_service import WeatherService
 import os
 from dotenv import load_dotenv
 import json
+import folium
+from streamlit_folium import st_folium
 
 # Load environment variables
 load_dotenv()
@@ -27,14 +29,51 @@ This system predicts solar and wind energy generation using real-time weather da
 It helps energy companies optimize planning and improve grid stability.
 """)
 
+# Initialize session state for coordinates if not exists
+if 'latitude' not in st.session_state:
+    st.session_state.latitude = 28.6139
+if 'longitude' not in st.session_state:
+    st.session_state.longitude = 77.2090
+
+# Create two columns for the map and inputs
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.subheader("Select Location")
+    # Create a folium map centered at the current coordinates
+    m = folium.Map(location=[st.session_state.latitude, st.session_state.longitude], zoom_start=4)
+    
+    # Add a marker at the current location
+    folium.Marker(
+        [st.session_state.latitude, st.session_state.longitude],
+        popup="Selected Location",
+        draggable=False
+    ).add_to(m)
+    
+    # Display the map and get the clicked coordinates
+    map_data = st_folium(m, height=400, width=700)
+    
+    # Update coordinates if map is clicked
+    if map_data['last_clicked']:
+        st.session_state.latitude = map_data['last_clicked']['lat']
+        st.session_state.longitude = map_data['last_clicked']['lng']
+        
+    st.info("👆 Click on the map to select a location, or manually enter coordinates in the sidebar.")
+
 # Sidebar for input parameters
 with st.sidebar:
     st.header("Input Parameters")
     
     # Location parameters with geocoding
     st.subheader("Location Parameters")
-    latitude = st.number_input("Latitude", value=28.6139, format="%.4f")
-    longitude = st.number_input("Longitude", value=77.2090, format="%.4f")
+    latitude = st.number_input("Latitude", value=st.session_state.latitude, format="%.4f", key="lat_input")
+    longitude = st.number_input("Longitude", value=st.session_state.longitude, format="%.4f", key="lon_input")
+    
+    # Update session state if inputs change
+    if latitude != st.session_state.latitude:
+        st.session_state.latitude = latitude
+    if longitude != st.session_state.longitude:
+        st.session_state.longitude = longitude
     
     # Advanced options
     st.subheader("Advanced Options")
@@ -49,7 +88,7 @@ with st.sidebar:
         solar_irradiance = st.number_input("Base Solar Irradiance (W/m²)", value=800.0)
     
     # Get and display location info
-    location_info = weather_service.get_location_info(latitude, longitude)
+    location_info = weather_service.get_location_info(st.session_state.latitude, st.session_state.longitude)
     st.info(f"Selected Location: {location_info['location_name']}\nTimezone: {location_info['timezone']}")
     
     # Date range selection
@@ -61,7 +100,7 @@ if st.button("Generate Forecast"):
     with st.spinner("Fetching weather data and generating forecast..."):
         if use_live_data:
             # Fetch real-time weather data
-            weather_data = weather_service.get_weather_forecast(latitude, longitude, forecast_days)
+            weather_data = weather_service.get_weather_forecast(st.session_state.latitude, st.session_state.longitude, forecast_days)
             if weather_data is None:
                 st.error("Failed to fetch weather data. Please check your API key or try again later.")
                 st.stop()
@@ -121,7 +160,7 @@ if st.button("Generate Forecast"):
         solar_historical_y = -np.clip(
             solar_historical_X[:, 5] * 0.2 * \
             (1 - 0.005 * (solar_historical_X[:, 3] - 25)) * \
-            np.cos(np.radians(abs(latitude))), 
+            np.cos(np.radians(abs(st.session_state.latitude))), 
             0, None
         )
         solar_model.fit(solar_historical_X, solar_historical_y)
@@ -274,7 +313,7 @@ if st.button("Generate Forecast"):
         ```
         GET /forecast/?latitude={}&longitude={}&days={}
         ```
-        """.format(latitude, longitude, forecast_days))
+        """.format(st.session_state.latitude, st.session_state.longitude, forecast_days))
         
         # Download options
         col1, col2 = st.columns(2)
