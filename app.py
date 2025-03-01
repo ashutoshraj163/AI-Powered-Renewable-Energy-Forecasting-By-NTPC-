@@ -52,14 +52,53 @@ with col1:
     # Create a folium map centered at the current coordinates
     m = folium.Map(location=[st.session_state.latitude, st.session_state.longitude], 
                   zoom_start=4,
-                  tiles="CartoDB positron")  # Using a cleaner map style
-    
-    # Add a red marker at the current location
-    folium.Marker(
-        [st.session_state.latitude, st.session_state.longitude],
+                  tiles="CartoDB positron")
+
+    # Add a pulsing circle marker at the current location for better visibility
+    folium.CircleMarker(
+        location=[st.session_state.latitude, st.session_state.longitude],
+        radius=8,
+        color='red',
+        fill=True,
         popup=f"Selected Location\nLat: {st.session_state.latitude:.4f}\nLon: {st.session_state.longitude:.4f}",
-        icon=folium.Icon(color='red', icon='info-sign'),
-        draggable=False
+    ).add_to(m)
+
+    # Add a larger pulsing circle for visual effect
+    folium.CircleMarker(
+        location=[st.session_state.latitude, st.session_state.longitude],
+        radius=20,
+        color='red',
+        fill=False,
+        popup="Click anywhere to select a new location",
+        weight=2,
+        opacity=0.5,
+        className='pulsing-circle'
+    ).add_to(m)
+
+    # Add custom CSS for pulsing effect
+    css = """
+    <style>
+    @keyframes pulse {
+        0% { transform: scale(0.5); opacity: 0; }
+        50% { opacity: 1; }
+        100% { transform: scale(1.2); opacity: 0; }
+    }
+    .pulsing-circle {
+        animation: pulse 2s ease-out infinite;
+    }
+    </style>
+    """
+    m.get_root().html.add_child(folium.Element(css))
+
+    # Add click instructions directly on the map
+    folium.Rectangle(
+        bounds=[
+            [st.session_state.latitude - 0.1, st.session_state.longitude - 0.2],  # Southwest corner
+            [st.session_state.latitude + 0.1, st.session_state.longitude + 0.2]   # Northeast corner
+        ],
+        color="transparent",
+        fill=False,
+        popup=folium.Popup("Click anywhere on the map to select a location", show=True)
     ).add_to(m)
     
     # Display the map
@@ -71,7 +110,7 @@ with col1:
         key=f"map_{st.session_state.latitude}_{st.session_state.longitude}"
     )
     
-    # Update coordinates if map is clicked
+    # Update coordinates if map is clicked with smooth animation
     if (map_data is not None and 
         'last_clicked' in map_data and 
         map_data['last_clicked'] is not None):
@@ -79,7 +118,7 @@ with col1:
         new_lat = map_data['last_clicked']['lat']
         new_lng = map_data['last_clicked']['lng']
         
-        # Only update if coordinates have changed
+        # Only update if coordinates have changed significantly
         if (abs(new_lat - st.session_state.latitude) > 0.0001 or 
             abs(new_lng - st.session_state.longitude) > 0.0001):
             
@@ -87,7 +126,7 @@ with col1:
             st.session_state.longitude = new_lng
             st.rerun()
     
-    st.info("👆 Click anywhere on the map to select a location, or use the sidebar controls to enter coordinates manually.")
+    st.info("👆 Click anywhere on the map to drop a pin and select a location. The marker will pulse to show the current selection.")
 
 with col2:
     st.subheader("Selected Location")
