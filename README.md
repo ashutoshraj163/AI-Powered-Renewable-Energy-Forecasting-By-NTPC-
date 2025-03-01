@@ -1,1 +1,0 @@
-# AI-Powered-Renewable-Energy-Forecasting-By-NTPC-
