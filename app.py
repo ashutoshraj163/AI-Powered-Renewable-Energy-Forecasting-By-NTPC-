@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.ensemble import RandomForestRegressor
@@ -17,586 +17,439 @@ from streamlit_folium import st_folium
 # Load environment variables
 load_dotenv()
 
-def kalman_filter_solar(forecast_values, initial_state_mean=None, Q=0.1, R=1.0):
-    """
-    Apply Kalman filtering to solar generation forecast.
+class EnergyForecastModel:
+    def __init__(self, n_estimators=100, n_models=5):
+        self.n_estimators = n_estimators
+        self.n_models = n_models
+        self.models = []
+        self.scaler = StandardScaler()
     
-    Args:
-        forecast_values: Array or Series of solar generation forecast values
-        initial_state_mean: Initial state for the filter (default: first forecast value)
-        Q: Process noise covariance (default: 0.1)
-        R: Measurement noise covariance (default: 1.0)
+    def create_ensemble(self):
+        self.models = [RandomForestRegressor(n_estimators=self.n_estimators, random_state=42+i) 
+                for i in range(self.n_models)]
+        return self.models
     
-    Returns:
-        Array of filtered values
-    """
-    # Convert to numpy array if needed
-    values = forecast_values.values if isinstance(forecast_values, pd.Series) else forecast_values
+    def generate_synthetic_data(self, n_samples, features, latitude=0):
+        X = np.random.normal(size=(n_samples, len(features)))
+        return X, self._generate_target(X, latitude)
     
-    if initial_state_mean is None:
-        initial_state_mean = values[0]
+    def _generate_target(self, X, latitude):
+        raise NotImplementedError("Must be implemented by subclass")
     
-    # Initialize Kalman Filter
-    kf = KalmanFilter(
-        transition_matrices=np.array([[1]]),  # Simple constant power model
-        observation_matrices=np.array([[1]]),
-        initial_state_mean=np.array([initial_state_mean]),
-        initial_state_covariance=np.array([[1.0]]),
-        transition_covariance=np.array([[Q]]),
-        observation_covariance=np.array([[R]])
-    )
-    
-    # Apply filtering
-    means, _ = kf.filter(values.reshape(-1, 1))
-    return pd.Series(means.flatten(), index=forecast_values.index)
+    def train_and_predict(self, X_test, latitude=0):
+        """Train on synthetic data and predict for test data"""
+        if not self.models:
+            self.create_ensemble()
+        
+        # Generate synthetic training data
+        n_train = max(1000, len(X_test))  # Use at least 1000 training samples
+        X_train, y_train = self.generate_synthetic_data(n_train, range(X_test.shape[1]), latitude)
+        
+        # Scale both training and test data
+        X_train_scaled = self.scaler.fit_transform(X_train)
+        X_test_scaled = self.scaler.transform(X_test)
+        
+        # Train models and make predictions
+        predictions = np.zeros((len(X_test_scaled), self.n_models))
+        for i, model in enumerate(self.models):
+            model.fit(X_train_scaled, y_train)
+            predictions[:, i] = model.predict(X_test_scaled)
+        
+        return self._process_predictions(predictions)
 
-def kalman_filter_wind(forecast_values, initial_state_mean=None, Q=0.2, R=1.5):
-    """
-    Apply Kalman filtering to wind generation forecast.
-    Wind generation typically has more variability, so we use different default parameters.
-    """
-    # Convert to numpy array if needed
-    values = forecast_values.values if isinstance(forecast_values, pd.Series) else forecast_values
+    def _process_predictions(self, predictions):
+        # Remove outliers and average predictions
+        generation = np.zeros(len(predictions))
+        for i in range(len(predictions)):
+            preds = predictions[i, :]
+            mean_pred = np.mean(preds)
+            std_pred = np.std(preds)
+            valid_mask = np.abs(preds - mean_pred) <= 2 * std_pred
+            generation[i] = np.mean(preds[valid_mask])
+        return generation
+
+class SolarForecastModel(EnergyForecastModel):
+    def _generate_target(self, X, latitude):
+        y = -np.clip(
+            X[:, 5] * 0.2 * \
+            (1 - 0.005 * (X[:, 3] - 25)) * \
+            np.cos(np.radians(abs(latitude))), 
+            0, None
+        )
+        bias = 0.1 * np.mean(np.abs(y))
+        return y + bias + np.random.normal(0, 0.05 * np.std(y), size=len(y))
+
+class WindForecastModel(EnergyForecastModel):
+    def __init__(self, rated_power=2.0, num_turbines=5, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rated_power = rated_power
+        self.num_turbines = num_turbines
     
-    if initial_state_mean is None:
-        initial_state_mean = values[0]
+    def _generate_target(self, X, _):
+        terrain_factor = 0.8 + 0.4 * np.random.random()
+        y = -self.rated_power * self.num_turbines * terrain_factor * \
+            np.clip((X[:, 4] - 3.0) / (12.0 - 3.0), 0, 1)
+        bias = 0.1 * np.mean(np.abs(y))
+        return y + bias + np.random.normal(0, 0.05 * np.std(y), size=len(y))
+
+def smooth_timeseries(data, window_size=3):
+    return pd.Series(data).rolling(window=window_size, center=True).mean().fillna(method='bfill').fillna(method='ffill').values
+
+def kalman_filter(forecast_values, params):
+    values = forecast_values.values if isinstance(forecast_values, pd.Series) else forecast_values
+    initial_state_mean = values[0] if params.get('initial_state_mean') is None else params['initial_state_mean']
     
     kf = KalmanFilter(
         transition_matrices=np.array([[1]]),
         observation_matrices=np.array([[1]]),
         initial_state_mean=np.array([initial_state_mean]),
         initial_state_covariance=np.array([[1.0]]),
-        transition_covariance=np.array([[Q]]),
-        observation_covariance=np.array([[R]])
+        transition_covariance=np.array([[params['Q']]]),
+        observation_covariance=np.array([[params['R']]])
     )
     
-    # Apply filtering
     means, _ = kf.filter(values.reshape(-1, 1))
     return pd.Series(means.flatten(), index=forecast_values.index)
 
-# Initialize weather service
-weather_service = WeatherService()
-
-# Set page config
-st.set_page_config(page_title="Energy Generation Forecast", layout="wide")
-
-# Title and description
-st.title("AI-Powered Energy Generation Forecast")
-st.markdown("""
-This system predicts solar and wind energy generation using real-time weather data and machine learning.
-It helps energy companies optimize planning and improve grid stability.
-""")
-
-# Initialize session state for coordinates if not exists
-if 'latitude' not in st.session_state:
-    st.session_state.latitude = 28.6139
-if 'longitude' not in st.session_state:
-    st.session_state.longitude = 77.2090
-if 'map_clicked' not in st.session_state:
-    st.session_state.map_clicked = False
-
-# Create two columns for the map and info
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    st.subheader("Select Location")
+def create_visualization(weather_data, location_info, show_confidence_interval=True):
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                        subplot_titles=("Weather Conditions", "Energy Generation", "Total Generation"))
     
-    # Add a button to reset map to default location
-    if st.button("Reset to Default Location"):
-        st.session_state.latitude = 28.6139
-        st.session_state.longitude = 77.2090
-        st.rerun()
+    # Weather conditions plot
+    for param, name in [
+        ('temperature', 'Temperature (°C)'),
+        ('wind_speed', 'Wind Speed (m/s)'),
+        ('solar_irradiance', 'Solar Irradiance (100 W/m²)')
+    ]:
+        y_data = weather_data[param]/100 if param == 'solar_irradiance' else weather_data[param]
+        fig.add_trace(go.Scatter(x=weather_data.index, y=y_data, name=name, line=dict(width=2)), row=1, col=1)
     
-    # Create a folium map centered at the current coordinates
-    m = folium.Map(location=[st.session_state.latitude, st.session_state.longitude], 
-                  zoom_start=4,
-                  tiles="CartoDB positron")
-
-    # Add a pulsing circle marker at the current location for better visibility
-    folium.CircleMarker(
-        location=[st.session_state.latitude, st.session_state.longitude],
-        radius=8,
-        color='red',
-        fill=True,
-        popup=f"Selected Location\nLat: {st.session_state.latitude:.4f}\nLon: {st.session_state.longitude:.4f}",
-    ).add_to(m)
-
-    # Add a larger pulsing circle for visual effect
-    folium.CircleMarker(
-        location=[st.session_state.latitude, st.session_state.longitude],
-        radius=20,
-        color='red',
-        fill=False,
-        popup="Click anywhere to select a new location",
-        weight=2,
-        opacity=0.5,
-        className='pulsing-circle'
-    ).add_to(m)
-
-    # Add custom CSS for pulsing effect
-    css = """
-    <style>
-    @keyframes pulse {
-        0% { transform: scale(0.5); opacity: 0; }
-        50% { opacity: 1; }
-        100% { transform: scale(1.2); opacity: 0; }
-    }
-    .pulsing-circle {
-        animation: pulse 2s ease-out infinite;
-    }
-    </style>
-    """
-    m.get_root().html.add_child(folium.Element(css))
-
-    # Add click instructions directly on the map
-    folium.Rectangle(
-        bounds=[
-            [st.session_state.latitude - 0.1, st.session_state.longitude - 0.2],  # Southwest corner
-            [st.session_state.latitude + 0.1, st.session_state.longitude + 0.2]   # Northeast corner
-        ],
-        color="transparent",
-        fill=False,
-        popup=folium.Popup("Click anywhere on the map to select a location", show=True)
-    ).add_to(m)
+    # Generation plots
+    if show_confidence_interval:
+        for source in ['solar', 'wind']:
+            color = 'rgba(255,127,14,0.1)' if source == 'solar' else 'rgba(44,160,44,0.1)'
+            fig.add_trace(go.Scatter(x=weather_data.index, y=weather_data[f'{source}_ci_upper'],
+                                   fill=None, mode='lines', line_color=color, showlegend=False), row=2, col=1)
+            fig.add_trace(go.Scatter(x=weather_data.index, y=weather_data[f'{source}_ci_lower'],
+                                   fill='tonexty', mode='lines', line_color=color, showlegend=False), row=2, col=1)
     
-    # Display the map
-    map_data = st_folium(
-        m,
-        height=400,
-        width=None,
-        returned_objects=["last_clicked"],
-        key=f"map_{st.session_state.latitude}_{st.session_state.longitude}"
+    # Add generation traces
+    fig.add_trace(go.Scatter(x=weather_data.index, y=weather_data['solar_generation'],
+                           name="Solar Generation (MW)", line=dict(width=2, color='rgb(255,127,14)')), row=2, col=1)
+    fig.add_trace(go.Scatter(x=weather_data.index, y=weather_data['wind_generation'],
+                           name="Wind Generation (MW)", line=dict(width=2, color='rgb(44,160,44)')), row=2, col=1)
+    
+    # Total generation
+    fig.add_trace(go.Scatter(x=weather_data.index, y=weather_data['total_generation'],
+                           name="Total Generation (MW)", fill='tozeroy', line=dict(width=2)), row=3, col=1)
+    
+    # Layout updates
+    fig.update_layout(
+        height=800,
+        showlegend=True,
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        hovermode='x unified',
+        title=dict(text=f"Energy Generation Forecast for {location_info['location_name']}", x=0.5, xanchor='center', font=dict(color='black')),
+        font=dict(color='black'),
+        legend=dict(font=dict(color='black')),
+        annotations=[dict(font=dict(color='black')) for _ in fig['layout']['annotations']]  # Update subplot titles
+    )
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', tickfont=dict(color='black'))
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', tickfont=dict(color='black'))
+    
+    return fig
+
+def simulate_weather_data(forecast_days, base_temp=25.0, base_wind=5.0, base_solar=800.0):
+    dates = pd.date_range(start=datetime.now(), periods=forecast_days*24, freq='h')
+    weather_data = pd.DataFrame(index=dates)
+    
+    # Add time-based features
+    weather_data['hour'] = weather_data.index.hour
+    weather_data['day_of_year'] = weather_data.index.dayofyear
+    weather_data['month'] = weather_data.index.month
+
+    # Temperature simulation with daily and seasonal patterns
+    weather_data['temperature'] = base_temp + \
+        5 * np.sin(2 * np.pi * weather_data['hour'] / 24) + \
+        2 * np.sin(2 * np.pi * weather_data['day_of_year'] / 365) + \
+        np.random.normal(0, 1.5, size=len(dates))
+
+    # Wind speed simulation
+    weather_data['wind_speed'] = base_wind + \
+        2 * np.sin(2 * np.pi * weather_data['hour'] / 24) + \
+        np.random.normal(0, 1.5, size=len(dates))
+    weather_data['wind_speed'] = weather_data['wind_speed'].clip(0, None)
+
+    # Solar irradiance with day/night and seasonal patterns
+    daily_pattern = np.sin(2 * np.pi * (weather_data['hour'] - 6) / 24)
+    seasonal_pattern = np.sin(2 * np.pi * (weather_data['day_of_year'] - 172) / 365)
+    weather_data['solar_irradiance'] = base_solar * \
+        np.clip(daily_pattern, 0, None) * (0.7 + 0.3 * seasonal_pattern) + \
+        np.random.normal(0, 30, size=len(dates))
+    weather_data['solar_irradiance'] = weather_data['solar_irradiance'].clip(0, None)
+    
+    return weather_data
+
+def process_and_display_results(weather_data, solar_model, wind_model, location_info, show_confidence_interval=True):
+    # Add time-based features
+    weather_data['hour'] = weather_data.index.hour
+    weather_data['day_of_year'] = weather_data.index.dayofyear
+    weather_data['month'] = weather_data.index.month
+    
+    features = ['hour', 'day_of_year', 'month', 'temperature', 'wind_speed', 'solar_irradiance']
+    X = weather_data[features].values
+    
+    # Generate predictions using synthetic training data
+    solar_generation = solar_model.train_and_predict(X, latitude=location_info.get('latitude', 28.6139))
+    wind_generation = wind_model.train_and_predict(X)
+    
+    # Apply smoothing
+    weather_data['solar_generation'] = smooth_timeseries(solar_generation)
+    weather_data['wind_generation'] = smooth_timeseries(wind_generation)
+    
+    # Apply Kalman filtering
+    weather_data['solar_generation'] = kalman_filter(
+        pd.Series(weather_data['solar_generation'], index=weather_data.index),
+        {'Q': 0.1, 'R': 1.0}
+    )
+    weather_data['wind_generation'] = kalman_filter(
+        pd.Series(weather_data['wind_generation'], index=weather_data.index),
+        {'Q': 0.2, 'R': 1.5}
     )
     
-    # Update coordinates if map is clicked with smooth animation
-    if (map_data is not None and 
-        'last_clicked' in map_data and 
-        map_data['last_clicked'] is not None):
+    # Calculate confidence intervals
+    if show_confidence_interval:
+        std_solar = np.std(solar_generation) * 1.96  # 95% CI
+        std_wind = np.std(wind_generation) * 1.96
         
-        new_lat = map_data['last_clicked']['lat']
-        new_lng = map_data['last_clicked']['lng']
+        weather_data['solar_ci_lower'] = weather_data['solar_generation'] - std_solar
+        weather_data['solar_ci_upper'] = weather_data['solar_generation'] + std_solar
+        weather_data['wind_ci_lower'] = weather_data['wind_generation'] - std_wind
+        weather_data['wind_ci_upper'] = weather_data['wind_generation'] + std_wind
         
-        # Only update if coordinates have changed significantly
-        if (abs(new_lat - st.session_state.latitude) > 0.0001 or 
-            abs(new_lng - st.session_state.longitude) > 0.0001):
-            
-            st.session_state.latitude = new_lat
-            st.session_state.longitude = new_lng
+        weather_data[['solar_ci_lower', 'wind_ci_lower']] = \
+            weather_data[['solar_ci_lower', 'wind_ci_lower']].clip(lower=0)
+    
+    # Calculate total generation
+    weather_data['total_generation'] = weather_data['solar_generation'] + weather_data['wind_generation']
+    
+    # Create and display visualization
+    fig = create_visualization(weather_data, location_info, show_confidence_interval)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Display statistics
+    display_statistics(weather_data)
+
+def display_statistics(weather_data):
+    st.subheader("Forecast Summary")
+    col1, col2, col3 = st.columns(3)
+    
+    metrics = [
+        ('Average Solar Generation', 'solar_generation'),
+        ('Average Wind Generation', 'wind_generation'),
+        ('Total Average Generation', 'total_generation')
+    ]
+    
+    for (label, column), col in zip(metrics, [col1, col2, col3]):
+        with col:
+            mean_val = weather_data[column].mean()
+            std_val = weather_data[column].std()
+            st.metric(label, f"{mean_val:.2f} MW", delta=f"{std_val:.2f} MW σ")
+    
+    # Generation patterns
+    st.subheader("Generation Statistics")
+    stats_cols = st.columns(2)
+    
+    with stats_cols[0]:
+        st.write("Daily Generation Pattern")
+        daily_pattern = weather_data.groupby(weather_data.index.hour)[
+            ['solar_generation', 'wind_generation']].mean()
+        st.line_chart(daily_pattern)
+    
+    with stats_cols[1]:
+        st.write("Energy Mix")
+        total_solar = abs(weather_data['solar_generation'].sum())
+        total_wind = abs(weather_data['wind_generation'].sum())
+        total_generation = total_solar + total_wind
+        
+        energy_mix_data = pd.DataFrame({
+            'Source': ['Solar', 'Wind'],
+            'Generation (MWh)': [total_solar, total_wind],
+            'Percentage (%)': [
+                (total_solar / total_generation) * 100,
+                (total_wind / total_generation) * 100
+            ]
+        })
+        
+        st.dataframe(
+            energy_mix_data,
+            column_config={
+                'Source': st.column_config.TextColumn('Energy Source'),
+                'Generation (MWh)': st.column_config.NumberColumn('Generation (MWh)', format='%.1f'),
+                'Percentage (%)': st.column_config.NumberColumn('Share (%)', format='%.1f%%')
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        # Create pie chart
+        energy_mix_fig = go.Figure(data=[go.Pie(
+            labels=['Solar', 'Wind'],
+            values=[total_solar, total_wind],
+            hole=0.4,
+            textinfo='label+percent',
+            marker_colors=['rgba(255,127,14,0.8)', 'rgba(44,160,44,0.8)'],
+            textfont=dict(color='black')
+        )])
+        
+        energy_mix_fig.update_layout(
+            showlegend=False,
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            height=300,
+            margin=dict(l=20, r=20, t=20, b=20),
+            font=dict(color='black'),
+            annotations=[dict(
+                text=f'Total<br>{total_generation:.1f} MWh',
+                x=0.5, y=0.5,
+                font_size=14,
+                font_color='black',
+                showarrow=False
+            )]
+        )
+        st.plotly_chart(energy_mix_fig, use_container_width=True)
+
+def main():
+    # Initialize weather service
+    weather_service = WeatherService()
+    
+    # Page config and title
+    st.set_page_config(page_title="Energy Generation Forecast", layout="wide")
+    st.title("AI-Powered Energy Generation Forecast")
+    
+    # Initialize session state
+    if 'latitude' not in st.session_state:
+        st.session_state.latitude = 28.6139
+    if 'longitude' not in st.session_state:
+        st.session_state.longitude = 77.2090
+    
+    # Create layout
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Map component
+        st.subheader("Select Location")
+        if st.button("Reset to Default Location"):
+            st.session_state.latitude = 28.6139
+            st.session_state.longitude = 77.2090
             st.rerun()
-    
-    st.info("👆 Click anywhere on the map to drop a pin and select a location. The marker will pulse to show the current selection.")
+        
+        m = folium.Map(location=[st.session_state.latitude, st.session_state.longitude], 
+                      zoom_start=4, tiles="CartoDB positron")
+        
+        # Add markers and styling
+        folium.CircleMarker(
+            location=[st.session_state.latitude, st.session_state.longitude],
+            radius=8,
+            color='red',
+            fill=True,
+            popup=f"Selected Location\nLat: {st.session_state.latitude:.4f}\nLon: {st.session_state.longitude:.4f}",
+        ).add_to(m)
 
-with col2:
-    st.subheader("Selected Location")
-    try:
-        location_info = weather_service.get_location_info(st.session_state.latitude, st.session_state.longitude)
-        st.success(
-            f"📍 **Location**: {location_info['location_name']}\n\n"
-            f"🌍 **Coordinates**:\n"
-            f"- Latitude: {st.session_state.latitude:.4f}°\n"
-            f"- Longitude: {st.session_state.longitude:.4f}°\n\n"
-            f"⏰ **Timezone**: {location_info['timezone']}"
-        )
-    except Exception as e:
-        st.error("Unable to fetch location details. Please try again.")
+        # Add a larger pulsing circle for visual effect
+        folium.CircleMarker(
+            location=[st.session_state.latitude, st.session_state.longitude],
+            radius=20,
+            color='red',
+            fill=False,
+            popup="Click anywhere to select a new location",
+            weight=2,
+            opacity=0.5,
+            className='pulsing-circle'
+        ).add_to(m)
 
-# Sidebar for input parameters
-with st.sidebar:
-    st.header("Input Parameters")
-    
-    # Location parameters with geocoding
-    st.subheader("Location Parameters")
-    latitude = st.number_input("Latitude", value=st.session_state.latitude, format="%.4f", key="lat_input")
-    longitude = st.number_input("Longitude", value=st.session_state.longitude, format="%.4f", key="lon_input")
-    
-    # Update session state if inputs change
-    if latitude != st.session_state.latitude:
-        st.session_state.latitude = latitude
-    if longitude != st.session_state.longitude:
-        st.session_state.longitude = longitude
-    
-    # Advanced options
-    st.subheader("Advanced Options")
-    use_live_data = st.checkbox("Use Live Weather Data", value=True)
-    show_confidence_interval = st.checkbox("Show Prediction Confidence Interval", value=True)
-    
-    # Weather parameters for simulation mode
-    if not use_live_data:
-        st.subheader("Simulation Parameters")
-        temperature = st.number_input("Base Temperature (°C)", value=25.0)
-        wind_speed = st.number_input("Base Wind Speed (m/s)", value=5.0)
-        solar_irradiance = st.number_input("Base Solar Irradiance (W/m²)", value=800.0)
-    
-    # Get and display location info
-    location_info = weather_service.get_location_info(st.session_state.latitude, st.session_state.longitude)
-    st.info(f"Selected Location: {location_info['location_name']}\nTimezone: {location_info['timezone']}")
-    
-    # Date range selection
-    st.subheader("Forecast Range")
-    forecast_days = st.number_input("Forecast Days", min_value=1, max_value=30, value=7)
+        # Add custom CSS for pulsing effect
+        css = """
+        <style>
+        @keyframes pulse {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: scale(1.2); opacity: 0; }
+        }
+        .pulsing-circle {
+            animation: pulse 2s ease-out infinite;
+        }
+        </style>
+        """
+        m.get_root().html.add_child(folium.Element(css))
 
-# Generate forecast when button is clicked
-if st.button("Generate Forecast"):
-    with st.spinner("Fetching weather data and generating forecast..."):
-        if use_live_data:
-            # Fetch real-time weather data
-            weather_data = weather_service.get_weather_forecast(st.session_state.latitude, st.session_state.longitude, forecast_days)
-            if weather_data is None:
-                st.error("Failed to fetch weather data. Please check your API key or try again later.")
-                st.stop()
-        else:
-            # Use simulated data (existing simulation code)
-            dates = pd.date_range(start=datetime.now(), periods=forecast_days*24, freq='h')
-            weather_data = pd.DataFrame(index=dates)
-            # Simulate weather data with some randomness and daily patterns
-            weather_data = pd.DataFrame(index=dates)
+        # Add click instructions directly on the map
+        folium.Rectangle(
+            bounds=[
+                [st.session_state.latitude - 0.1, st.session_state.longitude - 0.2],  # Southwest corner
+                [st.session_state.latitude + 0.1, st.session_state.longitude + 0.2]   # Northeast corner
+            ],
+            color="transparent",
+            fill=False,
+            popup=folium.Popup("Click anywhere on the map to select a location", show=True)
+        ).add_to(m)
+        
+        # Display map
+        map_data = st_folium(m, height=400, width=None, returned_objects=["last_clicked"])
+        
+        if (map_data and 'last_clicked' in map_data and map_data['last_clicked']):
+            new_lat = map_data['last_clicked']['lat']
+            new_lng = map_data['last_clicked']['lng']
+            if (abs(new_lat - st.session_state.latitude) > 0.0001 or 
+                abs(new_lng - st.session_state.longitude) > 0.0001):
+                st.session_state.latitude = new_lat
+                st.session_state.longitude = new_lng
+                st.rerun()
     
-            # Add time-based features
-            weather_data['hour'] = weather_data.index.hour
-            weather_data['day_of_year'] = weather_data.index.dayofyear
-            weather_data['month'] = weather_data.index.month
+    # Sidebar configuration
+    with st.sidebar:
+        st.header("Input Parameters")
+        use_live_data = st.checkbox("Use Live Weather Data", value=True)
+        show_confidence_interval = st.checkbox("Show Prediction Confidence Interval", value=True)
+        forecast_days = st.number_input("Forecast Days", min_value=1, max_value=30, value=7)
     
-            # Temperature simulation with daily pattern
-            weather_data['temperature'] = temperature + \
-                5 * np.sin(2 * np.pi * (weather_data.index.hour) / 24) + \
-                2 * np.sin(2 * np.pi * (weather_data.index.dayofyear) / 365) + \
-                np.random.normal(0, 1.5, size=len(dates))
-    
-            # Wind speed simulation with more realistic patterns
-            weather_data['wind_speed'] = wind_speed + \
-                2 * np.sin(2 * np.pi * (weather_data.index.hour) / 24) + \
-                np.random.normal(0, 1.5, size=len(dates))
-            weather_data['wind_speed'] = weather_data['wind_speed'].clip(0, None)
-    
-            # Solar irradiance with improved day/night pattern
-            daily_pattern = np.sin(2 * np.pi * (weather_data.index.hour - 6) / 24)
-            seasonal_pattern = np.sin(2 * np.pi * (weather_data.index.dayofyear - 172) / 365)
-            weather_data['solar_irradiance'] = solar_irradiance * \
-                np.clip(daily_pattern, 0, None) * (0.7 + 0.3 * seasonal_pattern) + \
-                np.random.normal(0, 30, size=len(dates))
-            weather_data['solar_irradiance'] = weather_data['solar_irradiance'].clip(0, None)
+    # Generate forecast button
+    if st.button("Generate Forecast"):
+        with st.spinner("Generating forecast..."):
+            # Get weather data
+            weather_data = weather_service.get_weather_forecast(
+                st.session_state.latitude, 
+                st.session_state.longitude, 
+                forecast_days
+            ) if use_live_data else simulate_weather_data(forecast_days)
+            
+            # Generate forecasts
+            solar_model = SolarForecastModel()
+            wind_model = WindForecastModel()
+            
+            # Process and display results
+            process_and_display_results(
+                weather_data, 
+                solar_model, 
+                wind_model, 
+                location_info=weather_service.get_location_info(
+                    st.session_state.latitude, 
+                    st.session_state.longitude
+                ),
+                show_confidence_interval=show_confidence_interval
+            )
 
-        # Add time-based features
-        weather_data['hour'] = weather_data.index.hour
-        weather_data['day_of_year'] = weather_data.index.dayofyear
-        weather_data['month'] = weather_data.index.month
-        
-        # Prepare features for ML model
-        features = ['hour', 'day_of_year', 'month', 'temperature', 'wind_speed', 'solar_irradiance']
-        X = weather_data[features].values
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        
-        # Train ML models with improved historical data simulation and error correction
-        n_estimators = 100
-        solar_models = []
-        wind_models = []
-        
-        # Create ensemble of models with different random states
-        for i in range(5):  # Create 5 different models for ensemble
-            solar_models.append(RandomForestRegressor(n_estimators=n_estimators, random_state=42+i))
-            wind_models.append(RandomForestRegressor(n_estimators=n_estimators, random_state=42+i))
-        
-        # Generate more realistic synthetic training data
-        n_samples = 1000
-        solar_historical_X = np.random.normal(size=(n_samples, len(features)))
-        wind_historical_X = np.random.normal(size=(n_samples, len(features)))
-        
-        # Improved solar generation model with temperature and latitude effects
-        solar_historical_y = -np.clip(
-            solar_historical_X[:, 5] * 0.2 * \
-            (1 - 0.005 * (solar_historical_X[:, 3] - 25)) * \
-            np.cos(np.radians(abs(st.session_state.latitude))), 
-            0, None
-        )
-        
-        # Add synthetic noise and bias for training error correction
-        solar_bias = 0.1 * np.mean(np.abs(solar_historical_y))
-        solar_historical_y_biased = solar_historical_y + solar_bias + \
-            np.random.normal(0, 0.05 * np.std(solar_historical_y), size=n_samples)
-        
-        # Train solar ensemble
-        solar_predictions = np.zeros((len(X_scaled), len(solar_models)))
-        for i, model in enumerate(solar_models):
-            model.fit(solar_historical_X, solar_historical_y_biased)
-            solar_predictions[:, i] = model.predict(X_scaled)
-        
-        # Bias correction for solar predictions
-        solar_bias_correction = solar_bias  # Known bias from synthetic data
-        solar_predictions -= solar_bias_correction
-        
-        # Ensemble averaging with outlier removal for solar
-        solar_generation = np.zeros(len(X_scaled))
-        for i in range(len(X_scaled)):
-            predictions = solar_predictions[i, :]
-            # Remove outliers (predictions outside 2 standard deviations)
-            mean_pred = np.mean(predictions)
-            std_pred = np.std(predictions)
-            valid_mask = np.abs(predictions - mean_pred) <= 2 * std_pred
-            solar_generation[i] = np.mean(predictions[valid_mask])
-        
-        # Similar process for wind generation
-        rated_power = 2.0  # MW per turbine
-        num_turbines = 5
-        wind_historical_y = wind_historical_X[:, 4].copy()
-        terrain_factor = 0.8 + 0.4 * np.random.random()
-        wind_historical_y = -rated_power * num_turbines * terrain_factor * \
-            np.clip((wind_historical_y - 3.0) / (12.0 - 3.0), 0, 1)
-        
-        # Add synthetic noise and bias for wind
-        wind_bias = 0.1 * np.mean(np.abs(wind_historical_y))
-        wind_historical_y_biased = wind_historical_y + wind_bias + \
-            np.random.normal(0, 0.05 * np.std(wind_historical_y), size=n_samples)
-        
-        # Train wind ensemble
-        wind_predictions = np.zeros((len(X_scaled), len(wind_models)))
-        for i, model in enumerate(wind_models):
-            model.fit(wind_historical_X, wind_historical_y_biased)
-            wind_predictions[:, i] = model.predict(X_scaled)
-        
-        # Bias correction for wind predictions
-        wind_bias_correction = wind_bias
-        wind_predictions -= wind_bias_correction
-        
-        # Ensemble averaging with outlier removal for wind
-        wind_generation = np.zeros(len(X_scaled))
-        for i in range(len(X_scaled)):
-            predictions = wind_predictions[i, :]
-            mean_pred = np.mean(predictions)
-            std_pred = np.std(predictions)
-            valid_mask = np.abs(predictions - mean_pred) <= 2 * std_pred
-            wind_generation[i] = np.mean(predictions[valid_mask])
-        
-        # Post-processing: Apply smoothing to remove sudden jumps
-        def smooth_timeseries(data, window_size=3):
-            return pd.Series(data).rolling(window=window_size, center=True).mean().fillna(method='bfill').fillna(method='ffill').values
-        
-        # Apply smoothing
-        solar_generation = smooth_timeseries(solar_generation)
-        wind_generation = smooth_timeseries(wind_generation)
-        
-        # Store predictions in weather_data
-        weather_data['solar_generation_raw'] = solar_generation
-        weather_data['wind_generation_raw'] = wind_generation
-        
-        # Apply Kalman filtering to smooth predictions
-        weather_data['solar_generation'] = kalman_filter_solar(
-            pd.Series(solar_generation, index=weather_data.index)
-        )
-        weather_data['wind_generation'] = kalman_filter_wind(
-            pd.Series(wind_generation, index=weather_data.index)
-        )
-        
-        # Calculate prediction intervals from ensemble
-        if show_confidence_interval:
-            # Adjust confidence intervals based on Kalman filter uncertainty
-            solar_uncertainty = np.std(solar_predictions, axis=1) * 1.96  # 95% CI
-            wind_uncertainty = np.std(wind_predictions, axis=1) * 1.96
-            
-            weather_data['solar_ci_lower'] = weather_data['solar_generation'] - solar_uncertainty
-            weather_data['solar_ci_upper'] = weather_data['solar_generation'] + solar_uncertainty
-            weather_data['wind_ci_lower'] = weather_data['wind_generation'] - wind_uncertainty
-            weather_data['wind_ci_upper'] = weather_data['wind_generation'] + wind_uncertainty
-            
-            # Ensure non-negative values
-            weather_data[['solar_ci_lower', 'wind_ci_lower']] = weather_data[['solar_ci_lower', 'wind_ci_lower']].clip(lower=0)
-        
-        # Total generation
-        weather_data['total_generation'] = weather_data['solar_generation'] + \
-            weather_data['wind_generation']
-        
-        # Display results
-        st.header("Forecast Results")
-        
-        # Create subplot with shared x-axis
-        fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
-                            subplot_titles=("Weather Conditions", "Energy Generation", "Total Generation"))
-        
-        # Weather conditions plot with improved styling
-        fig.add_trace(
-            go.Scatter(x=weather_data.index, y=weather_data['temperature'],
-                      name="Temperature (°C)", line=dict(width=2)), row=1, col=1
-        )
-        fig.add_trace(
-            go.Scatter(x=weather_data.index, y=weather_data['wind_speed'],
-                      name="Wind Speed (m/s)", line=dict(width=2)), row=1, col=1
-        )
-        fig.add_trace(
-            go.Scatter(x=weather_data.index, y=weather_data['solar_irradiance']/100,
-                      name="Solar Irradiance (100 W/m²)", line=dict(width=2)), row=1, col=1
-        )
-        
-        # Generation plots with confidence intervals and improved styling
-        if show_confidence_interval:
-            fig.add_trace(
-                go.Scatter(x=weather_data.index, y=weather_data['solar_ci_upper'],
-                          fill=None, mode='lines', line_color='rgba(255,127,14,0.1)',
-                          showlegend=False), row=2, col=1)
-            fig.add_trace(
-                go.Scatter(x=weather_data.index, y=weather_data['solar_ci_lower'],
-                          fill='tonexty', mode='lines', line_color='rgba(255,127,14,0.1)',
-                          showlegend=False), row=2, col=1)
-            fig.add_trace(
-                go.Scatter(x=weather_data.index, y=weather_data['wind_ci_upper'],
-                          fill=None, mode='lines', line_color='rgba(44,160,44,0.1)',
-                          showlegend=False), row=2, col=1)
-            fig.add_trace(
-                go.Scatter(x=weather_data.index, y=weather_data['wind_ci_lower'],
-                          fill='tonexty', mode='lines', line_color='rgba(44,160,44,0.1)',
-                          showlegend=False), row=2, col=1)
-        
-        fig.add_trace(
-            go.Scatter(x=weather_data.index, y=weather_data['solar_generation'],
-                      name="Solar Generation (MW)", line=dict(width=2, color='rgb(255,127,14)')), 
-            row=2, col=1
-        )
-        fig.add_trace(
-            go.Scatter(x=weather_data.index, y=weather_data['wind_generation'],
-                      name="Wind Generation (MW)", line=dict(width=2, color='rgb(44,160,44)')), 
-            row=2, col=1
-        )
-        
-        # Total generation plot
-        fig.add_trace(
-            go.Scatter(x=weather_data.index, y=weather_data['total_generation'],
-                      name="Total Generation (MW)", fill='tozeroy',
-                      line=dict(width=2)), row=3, col=1
-        )
-        
-        # Update layout with improved styling
-        fig.update_layout(
-            height=800,
-            showlegend=True,
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            hovermode='x unified',
-            title=dict(
-                text=f"Energy Generation Forecast for {location_info['location_name']}",
-                x=0.5,
-                xanchor='center',
-                font=dict(color='black')
-            ),
-            font=dict(color='black'),  # Set all font color to black
-            legend=dict(font=dict(color='black'))
-        )
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', tickfont=dict(color='black'))
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray', tickfont=dict(color='black'))
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Display enhanced statistics
-        st.subheader("Forecast Summary")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Average Solar Generation",
-                     f"{weather_data['solar_generation'].mean():.2f} MW",
-                     delta=f"{weather_data['solar_generation'].std():.2f} MW σ")
-        with col2:
-            st.metric("Average Wind Generation",
-                     f"{weather_data['wind_generation'].mean():.2f} MW",
-                     delta=f"{weather_data['wind_generation'].std():.2f} MW σ")
-        with col3:
-            st.metric("Total Average Generation",
-                     f"{weather_data['total_generation'].mean():.2f} MW",
-                     delta=f"{weather_data['total_generation'].std():.2f} MW σ")
-        
-        # Additional statistics
-        st.subheader("Generation Statistics")
-        stats_cols = st.columns(2)
-        
-        with stats_cols[0]:
-            st.write("Daily Generation Pattern")
-            daily_pattern = weather_data.groupby(weather_data.index.hour)[
-                ['solar_generation', 'wind_generation']].mean()
-            st.line_chart(daily_pattern)
-        
-        with stats_cols[1]:
-            st.write("Energy Mix")
-            total_solar = abs(weather_data['solar_generation'].sum())
-            total_wind = abs(weather_data['wind_generation'].sum())
-            total_generation = total_solar + total_wind
-            
-            # Calculate percentages
-            solar_percentage = (total_solar / total_generation) * 100
-            wind_percentage = (total_wind / total_generation) * 100
-            
-            # Create a DataFrame for the energy mix
-            energy_mix_data = pd.DataFrame({
-                'Source': ['Solar', 'Wind'],
-                'Generation (MWh)': [total_solar, total_wind],
-                'Percentage (%)': [solar_percentage, wind_percentage]
-            })
-            
-            # Display the data in an interactive table
-            st.dataframe(
-                energy_mix_data,
-                column_config={
-                    'Source': st.column_config.TextColumn('Energy Source'),
-                    'Generation (MWh)': st.column_config.NumberColumn('Generation (MWh)', format='%.1f'),
-                    'Percentage (%)': st.column_config.NumberColumn('Share (%)', format='%.1f%%')
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-            
-            # Create bar chart data
-            chart_data = pd.DataFrame({
-                'Solar': [total_solar],
-                'Wind': [total_wind]
-            })
-            
-            # Display the interactive bar chart
-            st.bar_chart(
-                chart_data.T,
-                use_container_width=True
-            )
-            
-            # Add a pie chart for proportion visualization
-            energy_mix_fig = go.Figure(data=[go.Pie(
-                labels=['Solar', 'Wind'],
-                values=[total_solar, total_wind],
-                hole=0.4,
-                textinfo='label+percent',
-                marker_colors=['rgba(255,127,14,0.8)', 'rgba(44,160,44,0.8)']
-            )])
-            
-            energy_mix_fig.update_layout(
-                showlegend=False,
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                height=300,
-                margin=dict(l=20, r=20, t=20, b=20),
-                annotations=[dict(
-                    text=f'Total<br>{total_generation:.1f} MWh',
-                    x=0.5, y=0.5,
-                    font_size=14,
-                    showarrow=False
-                )]
-            )
-            st.plotly_chart(energy_mix_fig, use_container_width=True)
-        
-        # API Integration Information
-        st.subheader("API Integration")
-        st.markdown("""
-        To integrate this forecast into your systems, use our API endpoint:
-        ```
-        GET /forecast/?latitude={}&longitude={}&days={}
-        ```
-        """.format(st.session_state.latitude, st.session_state.longitude, forecast_days))
-        
-        # Download options
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button(
-                label="Download Forecast Data (CSV)",
-                data=weather_data.to_csv(),
-                file_name=f"energy_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-        with col2:
-            st.download_button(
-                label="Download Forecast Data (JSON)",
-                data=json.dumps(weather_data.to_dict(orient='records'), indent=2),
-                file_name=f"energy_forecast_{datetime.now().strftime('%Y%m%d')}.json",
-                mime="application/json"
-            )
+if __name__ == "__main__":
+    main()
+
+# Export these classes and functions for use in dashboard.py
+__all__ = [
+    'WeatherService',
+    'SolarForecastModel',
+    'WindForecastModel',
+    'simulate_weather_data',
+    'process_and_display_results',
+    'create_visualization',
+    'display_statistics'
+]

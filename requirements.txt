@@ -13,3 +13,4 @@ geopy>=2.4.1
 pydantic>=2.6.3
 folium
 streamlit-folium
+pykalman>=0.9.5
