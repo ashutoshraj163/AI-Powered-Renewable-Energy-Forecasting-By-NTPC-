@@ -34,31 +34,74 @@ if 'latitude' not in st.session_state:
     st.session_state.latitude = 28.6139
 if 'longitude' not in st.session_state:
     st.session_state.longitude = 77.2090
+if 'map_clicked' not in st.session_state:
+    st.session_state.map_clicked = False
 
-# Create two columns for the map and inputs
+# Create two columns for the map and info
 col1, col2 = st.columns([2, 1])
 
 with col1:
     st.subheader("Select Location")
-    # Create a folium map centered at the current coordinates
-    m = folium.Map(location=[st.session_state.latitude, st.session_state.longitude], zoom_start=4)
     
-    # Add a marker at the current location
+    # Add a button to reset map to default location
+    if st.button("Reset to Default Location"):
+        st.session_state.latitude = 28.6139
+        st.session_state.longitude = 77.2090
+        st.rerun()
+    
+    # Create a folium map centered at the current coordinates
+    m = folium.Map(location=[st.session_state.latitude, st.session_state.longitude], 
+                  zoom_start=4,
+                  tiles="CartoDB positron")  # Using a cleaner map style
+    
+    # Add a red marker at the current location
     folium.Marker(
         [st.session_state.latitude, st.session_state.longitude],
-        popup="Selected Location",
+        popup=f"Selected Location\nLat: {st.session_state.latitude:.4f}\nLon: {st.session_state.longitude:.4f}",
+        icon=folium.Icon(color='red', icon='info-sign'),
         draggable=False
     ).add_to(m)
     
-    # Display the map and get the clicked coordinates
-    map_data = st_folium(m, height=400, width=700)
+    # Display the map
+    map_data = st_folium(
+        m,
+        height=400,
+        width=None,
+        returned_objects=["last_clicked"],
+        key=f"map_{st.session_state.latitude}_{st.session_state.longitude}"
+    )
     
     # Update coordinates if map is clicked
-    if map_data['last_clicked']:
-        st.session_state.latitude = map_data['last_clicked']['lat']
-        st.session_state.longitude = map_data['last_clicked']['lng']
+    if (map_data is not None and 
+        'last_clicked' in map_data and 
+        map_data['last_clicked'] is not None):
         
-    st.info("👆 Click on the map to select a location, or manually enter coordinates in the sidebar.")
+        new_lat = map_data['last_clicked']['lat']
+        new_lng = map_data['last_clicked']['lng']
+        
+        # Only update if coordinates have changed
+        if (abs(new_lat - st.session_state.latitude) > 0.0001 or 
+            abs(new_lng - st.session_state.longitude) > 0.0001):
+            
+            st.session_state.latitude = new_lat
+            st.session_state.longitude = new_lng
+            st.rerun()
+    
+    st.info("👆 Click anywhere on the map to select a location, or use the sidebar controls to enter coordinates manually.")
+
+with col2:
+    st.subheader("Selected Location")
+    try:
+        location_info = weather_service.get_location_info(st.session_state.latitude, st.session_state.longitude)
+        st.success(
+            f"📍 **Location**: {location_info['location_name']}\n\n"
+            f"🌍 **Coordinates**:\n"
+            f"- Latitude: {st.session_state.latitude:.4f}°\n"
+            f"- Longitude: {st.session_state.longitude:.4f}°\n\n"
+            f"⏰ **Timezone**: {location_info['timezone']}"
+        )
+    except Exception as e:
+        st.error("Unable to fetch location details. Please try again.")
 
 # Sidebar for input parameters
 with st.sidebar:
