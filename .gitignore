@@ -81,3 +81,5 @@ models/*.pkl
 data/*.csv
 *.parquet
 *.feather
+
+ui/node_modules/

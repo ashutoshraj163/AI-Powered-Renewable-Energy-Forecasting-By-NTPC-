@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Energy Forecast Ai</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/shorthandcss@1.1.1/dist/shorthand.min.css" />
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css?family=Muli:200,300,400,500,600,700,800,900&display=swap" />
+    <link rel="stylesheet" type="text/css"
+        href="https://cdnjs.cloudflare.com/ajax/libs/slick-carousel/1.9.0/slick.min.css" />
+    <link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick-theme.css" />
+    <style>
+        #nav-items a {
+            color: white !important;
+        }
+    </style>
+</head>
+
+<body class="bg-black muli">
+    <video autoplay muted loop class="absolute top-0 left-0 w-auto min-w-full min-h-full object-cover -z-10 opacity-50">
+        <source src="./assets/solar.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+    <nav class="w-100pc flex flex-column md-flex-row md-px-10 py-5 bg-transparent relative z-10">
+        <div class="flex justify-between items-center">
+            <a href="#" class="flex items-center p-2 mr-4 no-underline text-white">
+                <img class="max-h-l6 w-auto" src="assets/images/logo.png" />
+                <span style="margin-left: 0.75rem; color: white; font-weight: bold; font-size: 1.25rem; white-space: nowrap;">Forecast-AI</span>
+            </a>
+            <a data-toggle="toggle-nav" data-target="#nav-items" href="#"
+                class="flex items-center ml-auto md-hidden indigo-lighter opacity-50 hover-opacity-100 ease-300 p-1 m-3">
+                <i data-feather="menu"></i>
+            </a>
+        </div>
+        <div id="nav-items" class="hidden flex sm-w-100pc flex-column md-flex md-flex-row md-justify-end items-center text-white">
+            <a href="index.html" class="fs-s1 mx-3 py-3 indigo no-underline hover-underline text-white">Home</a>
+            <a href="#features" class="fs-s1 mx-3 py-3 indigo no-underline hover-underline text-white">Features</a>
+            <a href="Login.html" class="button bg-black black fw-600 no-underline mx-5 text-">Get Started</a>
+        </div>
+    </nav>
+
+    <!-- hero section -->
+    <section id="home" class="min-h-100vh flex justify-start items-center relative z-10">
+        <div class="relative z-10 mx-5 md-mx-l5">
+            <div class="inline-block br-round bg-indigo-30 indigo-lightest p-2 pr-3 fs-s2 mb-5">
+                <div class="inline-block bg-indigo indigo-lightest br-round px-4 py-1 mr-3 fs-s3">🤖</div>
+                Powered By AI
+            </div>
+            <div>
+                <h1 class="white fs-l3 lh-2 md-fs-xl1 md-lh-1 fw-900">AI-Powered <br />Renewable Energy Forecasting</h1>
+            </div>
+        </div>
+    </section>
+
+    <!-- features -->
+    <section id="features" class="p-10 md-p-l5">
+        <div class="flex flex-wrap mx-auto">
+            <div class="w-100pc md-w-33pc">
+                <div class="br-8 p-5 m-5">
+                    <div class="flex justify-center items-center bg-indigo-lightest-10 white w-l5 h-l5 br-round mb-5">
+                        <i data-feather="sun" class="w-l5"></i>
+                    </div>
+                    <h4 class="white fw-600 fs-m3 mb-5">AI-Powered Predictions</h4>
+                    <div class="indigo-lightest fw-600 fs-m1 lh-3 opacity-50">Using machine learning algorithms and
+                        historical weather data, our system predicts solar and wind energy output with unparalleled
+                        accuracy.</div>
+                    <a href="#"
+                        class="mt-5 button bg-indigo-lightest-10 fs-s3 white no-underline hover-opacity-100 hover-scale-up-1 ease-300">Read</a>
+                </div>
+            </div>
+            <div class="w-100pc md-w-33pc">
+                <div class="br-8 p-5 m-5">
+                    <div class="flex justify-center items-center bg-indigo-lightest-10 white w-l5 h-l5 br-round mb-5">
+                        <i data-feather="bar-chart-2" class="w-l5"></i>
+                    </div>
+                    <h4 class="white fw-600 fs-m3 mb-5">Interactive Web Dashboard</h4>
+                    <div class="indigo-lightest fw-600 fs-m1 opacity-50">A user-friendly interface displaying real-time
+                        energy generation forecasts, featuring interactive charts and advanced analytics.</div>
+                    <a href="#"
+                        class="mt-5 button bg-indigo-lightest-10 fs-s3 white no-underline hover-opacity-100 hover-scale-up-1 ease-300">Read</a>
+                </div>
+            </div>
+            <div class="w-100pc md-w-33pc">
+                <div class="br-8 p-5 m-5">
+                    <div class="flex justify-center items-center bg-indigo-lightest-10 white w-l5 h-l5 br-round mb-5">
+                        <i data-feather="globe" class="w-l5"></i>
+                    </div>
+                    <h4 class="white fw-600 fs-m3 mb-5">Geographical Adaptability</h4>
+                    <div class="indigo-lightest fw-600 fs-m1 opacity-50">Customizable predictions tailored to different
+                        locations based on localized weather conditions and past energy trends.</div>
+                    <a href="#"
+                        class="mt-5 button bg-indigo-lightest-10 fs-s3 white no-underline hover-opacity-100 hover-scale-up-1 ease-300">Read</a>
+                </div>
+            </div>
+            <div class="w-100pc md-w-33pc">
+                <div class="br-8 p-5 m-5">
+                    <div class="flex justify-center items-center bg-indigo-lightest-10 white w-l5 h-l5 br-round mb-5">
+                        <i data-feather="wifi" class="w-l5"></i>
+                    </div>
+                    <h4 class="white fw-600 fs-m3 mb-5">Real-Time Data Integration</h4>
+                    <div class="indigo-lightest fw-600 fs-m1 opacity-50">Our system fetches live weather data from APIs,
+                        ensuring continuous updates and reliable forecasting.</div>
+                    <a href="#"
+                        class="mt-5 button bg-indigo-lightest-10 fs-s3 white no-underline hover-opacity-100 hover-scale-up-1 ease-300">Read</a>
+                </div>
+            </div>
+            <div class="w-100pc md-w-33pc">
+                <div class="br-8 p-5 m-5">
+                    <div class="flex justify-center items-center bg-indigo-lightest-10 white w-l5 h-l5 br-round mb-5">
+                        <i data-feather="link" class="w-l5"></i>
+                    </div>
+                    <h4 class="white fw-600 fs-m3 mb-5">Seamless API Integration</h4>
+                    <div class="indigo-lightest fw-600 fs-m1 opacity-50">Energy companies can easily integrate our
+                        AI-powered forecasts into their existing energy management systems for better planning and
+                        efficiency.</div>
+                    <a href="#"
+                        class="mt-5 button bg-indigo-lightest-10 fs-s3 white no-underline hover-opacity-100 hover-scale-up-1 ease-300">Read</a>
+                </div>
+            </div>
+            <div class="w-100pc md-w-33pc">
+                <div class="br-8 p-5 m-5">
+                    <div class="flex justify-center items-center bg-indigo-lightest-10 white w-l5 h-l5 br-round mb-5">
+                        <i data-feather="target" class="w-l5"></i>
+                    </div>
+                    <h4 class="white fw-600 fs-m3 mb-5">Accuracy Optimization</h4>
+                    <div class="indigo-lightest fw-600 fs-m1 opacity-50">Using advanced error correction techniques, we
+                        continuously refine our models to minimize the gap between forecasted and actual power
+                        generation.</div>
+                    <a href="#"
+                        class="mt-5 button bg-indigo-lightest-10 fs-s3 white no-underline hover-opacity-100 hover-scale-up-1 ease-300">Read</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- slider -->
+    <section class="relative bg-indigo-lightest-10">
+        <div id="slider-1">
+            <div class="p-10 md-p-l10 flex justify-center items-center flex-column text-center">
+                <h2 class="white fs-l3 fw-900">Improve Grid Stability</h2>
+                <p class="indigo-lightest fw-600 fs-m1 opacity-30 my-5">Minimize fluctuations and optimize energy
+                    distribution.</p>
+            </div>
+            <div class="p-10 md-p-l10 flex justify-center items-center flex-column text-center">
+                <h2 class="white fs-l3 fw-900">Reduce Fossil Fuel Dependence</h2>
+                <p class="indigo-lightest fw-600 fs-m1 opacity-30 my-5">Efficient forecasting lowers the need for backup
+                    power.</p>
+            </div>
+            <div class="p-10 md-p-l10 flex justify-center items-center flex-column text-center">
+                <h2 class="white fs-l3 fw-900">Enhance Sustainability Goals</h2>
+                <p class="indigo-lightest fw-600 fs-m1 opacity-30 my-5">Make data-driven decisions for a cleaner,
+                    greener energy future.</p>
+            </div>
+        </div>
+        <ul class="absolute list-none w-100pc flex justify-between top-50pc">
+            <li><button
+                    class="prev ml-10 br-round border-indigo-lightest indigo-lightest  bg-transparent flex justify-center items-center p-2 focus-indigo-lighter outline-none"><i
+                        data-feather="chevron-left"></i></button></li>
+            <li><button
+                    class="next mr-10 br-round border-indigo-lightest indigo-lightest  bg-transparent flex justify-center items-center p-2  focus-indigo-lighter outline-none"><i
+                        data-feather="chevron-right"></i></button></li>
+        </ul>
+    </section>
+
+    <!-- featured blog -->
+    <section class="p-10 md-p-l10">
+        <div class="md-w-75pc">
+            <h2 class="white fs-l3 fw-900 lh-1">Powering the Future with AI</h2>
+            <p class="indigo-lightest fw-600 fs-m1 opacity-50 my-5">Join us in revolutionizing renewable energy
+                forecasting with AI-driven insights. Let’s build a sustainable, efficient, and reliable energy
+                ecosystem—one prediction at a time </p>
+        </div>
+        <div class="relative w-100pc h-75vh bg-cover bg-b"
+            style="background-image: url(https://img.freepik.com/free-vector/winter-solstice-background-hand-drawn-style_23-2149203684.jpg?t=st=1740753608~exp=1740757208~hmac=d3bd0cba3c42f4b4ce620b8f93cf4a180cb430cdc292b8ca7f08a52433e5c5a8&w=1800);">
+            <a href="#"
+                class="bg-white black px-5 py-3 absolute right-0 bottom-0 hover-bg-black hover-white ease-500 flex justify-center items-center after-arrow-right no-underline fs-m1"></a>
+        </div>
+
+    </section>
+
+    <!-- blog -->
+    <section class="p-0 md-p-5 flex justify-center"></section>
+    <div class="flex flex-wrap justify-center">
+        <div class="w-100pc md-w-33pc p-10">
+            <a href="#" class="block no-underline p-5 br-8 hover-bg-indigo-lightest-10 hover-scale-up-1 ease-300">
+                <img class="w-100pc"
+                    src="https://plus.unsplash.com/premium_photo-1679917152396-4b18accacb9d?q=80&w=2127&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+                    alt="">
+                <p class="fw-600 white fs-m3 mt-3">
+                    Wind Energy Forecasting
+                </p>
+                <div class="indigo fs-s3 italic after-arrow-right my-4">Predicting Wind Power for a Stable Grid</div>
+            </a>
+        </div>
+        <div class="w-100pc md-w-33pc p-10">
+            <a href="#" class="block no-underline p-5 br-8 hover-bg-indigo-lightest-10 hover-scale-up-1 ease-300">
+                <img class="w-100pc"
+                    src="https://plus.unsplash.com/premium_photo-1679953672875-7b6a186b2fef?q=80&w=2127&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+                    alt="">
+                <p class="fw-600 white fs-m3 mt-3">
+                    Solar Energy Forecasting
+                </p>
+                <div class="indigo fs-s3 italic after-arrow-right my-4">Optimizing Solar Power Generation with AI</div>
+            </a>
+        </div>
+
+    </div>
+    </section>
+  
+        <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+        <script src="https://unpkg.com/feather-icons"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/slick-carousel/1.9.0/slick.min.js"></script>
+        <script
+            src="https://cdn.jsdelivr.net/gh/cferdinandi/smooth-scroll@15.0.0/dist/smooth-scroll.polyfills.min.js"></script>
+        <script src="assets/js/script.js"></script>
+</body>
+
+</html>

@@ -7,7 +7,6 @@ from plotly.subplots import make_subplots
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from weather_service import WeatherService
-from pykalman import KalmanFilter
 import os
 from dotenv import load_dotenv
 import json
@@ -317,15 +316,9 @@ if st.button("Generate Forecast"):
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         
-        # Train ML models with improved historical data simulation and error correction
-        n_estimators = 100
-        solar_models = []
-        wind_models = []
-        
-        # Create ensemble of models with different random states
-        for i in range(5):  # Create 5 different models for ensemble
-            solar_models.append(RandomForestRegressor(n_estimators=n_estimators, random_state=42+i))
-            wind_models.append(RandomForestRegressor(n_estimators=n_estimators, random_state=42+i))
+        # Train ML models with improved historical data simulation
+        solar_model = RandomForestRegressor(n_estimators=100, random_state=42)
+        wind_model = RandomForestRegressor(n_estimators=100, random_state=42)
         
         # Generate more realistic synthetic training data
         n_samples = 1000
@@ -339,97 +332,32 @@ if st.button("Generate Forecast"):
             np.cos(np.radians(abs(st.session_state.latitude))), 
             0, None
         )
+        solar_model.fit(solar_historical_X, solar_historical_y)
         
-        # Add synthetic noise and bias for training error correction
-        solar_bias = 0.1 * np.mean(np.abs(solar_historical_y))
-        solar_historical_y_biased = solar_historical_y + solar_bias + \
-            np.random.normal(0, 0.05 * np.std(solar_historical_y), size=n_samples)
-        
-        # Train solar ensemble
-        solar_predictions = np.zeros((len(X_scaled), len(solar_models)))
-        for i, model in enumerate(solar_models):
-            model.fit(solar_historical_X, solar_historical_y_biased)
-            solar_predictions[:, i] = model.predict(X_scaled)
-        
-        # Bias correction for solar predictions
-        solar_bias_correction = solar_bias  # Known bias from synthetic data
-        solar_predictions -= solar_bias_correction
-        
-        # Ensemble averaging with outlier removal for solar
-        solar_generation = np.zeros(len(X_scaled))
-        for i in range(len(X_scaled)):
-            predictions = solar_predictions[i, :]
-            # Remove outliers (predictions outside 2 standard deviations)
-            mean_pred = np.mean(predictions)
-            std_pred = np.std(predictions)
-            valid_mask = np.abs(predictions - mean_pred) <= 2 * std_pred
-            solar_generation[i] = np.mean(predictions[valid_mask])
-        
-        # Similar process for wind generation
+        # Improved wind generation model with terrain effects
         rated_power = 2.0  # MW per turbine
         num_turbines = 5
         wind_historical_y = wind_historical_X[:, 4].copy()
-        terrain_factor = 0.8 + 0.4 * np.random.random()
+        terrain_factor = 0.8 + 0.4 * np.random.random()  # Simplified terrain effect
         wind_historical_y = -rated_power * num_turbines * terrain_factor * \
             np.clip((wind_historical_y - 3.0) / (12.0 - 3.0), 0, 1)
+        wind_model.fit(wind_historical_X, wind_historical_y)
         
-        # Add synthetic noise and bias for wind
-        wind_bias = 0.1 * np.mean(np.abs(wind_historical_y))
-        wind_historical_y_biased = wind_historical_y + wind_bias + \
-            np.random.normal(0, 0.05 * np.std(wind_historical_y), size=n_samples)
+        # Generate predictions with confidence intervals
+        weather_data['solar_generation'] = solar_model.predict(X_scaled)
+        weather_data['wind_generation'] = wind_model.predict(X_scaled)
         
-        # Train wind ensemble
-        wind_predictions = np.zeros((len(X_scaled), len(wind_models)))
-        for i, model in enumerate(wind_models):
-            model.fit(wind_historical_X, wind_historical_y_biased)
-            wind_predictions[:, i] = model.predict(X_scaled)
-        
-        # Bias correction for wind predictions
-        wind_bias_correction = wind_bias
-        wind_predictions -= wind_bias_correction
-        
-        # Ensemble averaging with outlier removal for wind
-        wind_generation = np.zeros(len(X_scaled))
-        for i in range(len(X_scaled)):
-            predictions = wind_predictions[i, :]
-            mean_pred = np.mean(predictions)
-            std_pred = np.std(predictions)
-            valid_mask = np.abs(predictions - mean_pred) <= 2 * std_pred
-            wind_generation[i] = np.mean(predictions[valid_mask])
-        
-        # Post-processing: Apply smoothing to remove sudden jumps
-        def smooth_timeseries(data, window_size=3):
-            return pd.Series(data).rolling(window=window_size, center=True).mean().fillna(method='bfill').fillna(method='ffill').values
-        
-        # Apply smoothing
-        solar_generation = smooth_timeseries(solar_generation)
-        wind_generation = smooth_timeseries(wind_generation)
-        
-        # Store predictions in weather_data
-        weather_data['solar_generation_raw'] = solar_generation
-        weather_data['wind_generation_raw'] = wind_generation
-        
-        # Apply Kalman filtering to smooth predictions
-        weather_data['solar_generation'] = kalman_filter_solar(
-            pd.Series(solar_generation, index=weather_data.index)
-        )
-        weather_data['wind_generation'] = kalman_filter_wind(
-            pd.Series(wind_generation, index=weather_data.index)
-        )
-        
-        # Calculate prediction intervals from ensemble
+        # Calculate prediction intervals
         if show_confidence_interval:
-            # Adjust confidence intervals based on Kalman filter uncertainty
-            solar_uncertainty = np.std(solar_predictions, axis=1) * 1.96  # 95% CI
-            wind_uncertainty = np.std(wind_predictions, axis=1) * 1.96
+            solar_predictions = np.array([tree.predict(X_scaled) 
+                for tree in solar_model.estimators_])
+            wind_predictions = np.array([tree.predict(X_scaled) 
+                for tree in wind_model.estimators_])
             
-            weather_data['solar_ci_lower'] = weather_data['solar_generation'] - solar_uncertainty
-            weather_data['solar_ci_upper'] = weather_data['solar_generation'] + solar_uncertainty
-            weather_data['wind_ci_lower'] = weather_data['wind_generation'] - wind_uncertainty
-            weather_data['wind_ci_upper'] = weather_data['wind_generation'] + wind_uncertainty
-            
-            # Ensure non-negative values
-            weather_data[['solar_ci_lower', 'wind_ci_lower']] = weather_data[['solar_ci_lower', 'wind_ci_lower']].clip(lower=0)
+            weather_data['solar_ci_lower'] = np.percentile(solar_predictions, 5, axis=0)
+            weather_data['solar_ci_upper'] = np.percentile(solar_predictions, 95, axis=0)
+            weather_data['wind_ci_lower'] = np.percentile(wind_predictions, 5, axis=0)
+            weather_data['wind_ci_upper'] = np.percentile(wind_predictions, 95, axis=0)
         
         # Total generation
         weather_data['total_generation'] = weather_data['solar_generation'] + \
@@ -587,48 +515,29 @@ if st.button("Generate Forecast"):
             solar_percentage = (total_solar / total_generation) * 100
             wind_percentage = (total_wind / total_generation) * 100
             
-            # Create a DataFrame for the energy mix
-            energy_mix_data = pd.DataFrame({
-                'Source': ['Solar', 'Wind'],
-                'Generation (MWh)': [total_solar, total_wind],
-                'Percentage (%)': [solar_percentage, wind_percentage]
-            })
+            # Create enhanced energy mix visualization using plotly
+            energy_mix_fig = go.Figure()
             
-            # Display the data in an interactive table
-            st.dataframe(
-                energy_mix_data,
-                column_config={
-                    'Source': st.column_config.TextColumn('Energy Source'),
-                    'Generation (MWh)': st.column_config.NumberColumn('Generation (MWh)', format='%.1f'),
-                    'Percentage (%)': st.column_config.NumberColumn('Share (%)', format='%.1f%%')
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-            
-            # Create bar chart data
-            chart_data = pd.DataFrame({
-                'Solar': [total_solar],
-                'Wind': [total_wind]
-            })
-            
-            # Display the interactive bar chart
-            st.bar_chart(
-                chart_data.T,
-                use_container_width=True
-            )
-            
-            # Add a pie chart for proportion visualization
-            energy_mix_fig = go.Figure(data=[go.Pie(
-                labels=['Solar', 'Wind'],
-                values=[total_solar, total_wind],
-                hole=0.4,
-                textinfo='label+percent',
-                marker_colors=['rgba(255,127,14,0.8)', 'rgba(44,160,44,0.8)']
-            )])
+            # Add bars with improved styling
+            energy_mix_fig.add_trace(go.Bar(
+                x=['Solar', 'Wind'],
+                y=[total_solar, total_wind],
+                text=[f'{total_solar:.1f} MWh<br>({solar_percentage:.1f}%)', 
+                      f'{total_wind:.1f} MWh<br>({wind_percentage:.1f}%)'],
+                textposition='auto',
+                name='Generation',
+                marker_color=['rgba(255,127,14,0.8)', 'rgba(44,160,44,0.8)'],
+                hovertemplate='%{x}<br>Generation: %{y:.1f} MWh<br>Share: %{text}<extra></extra>'
+            ))
             
             # Update energy mix figure with theme
             energy_mix_fig.update_layout(
+                title=dict(
+                    text='Energy Generation Mix',
+                    x=0.5,
+                    xanchor='center',
+                    font=dict(size=16, color='black')
+                ),
                 showlegend=False,
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)',
@@ -669,3 +578,5 @@ if st.button("Generate Forecast"):
                 file_name=f"energy_forecast_{datetime.now().strftime('%Y%m%d')}.json",
                 mime="application/json"
             )
+            
+
