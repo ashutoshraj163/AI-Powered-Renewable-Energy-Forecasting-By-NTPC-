@@ -9,9 +9,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 from weather_service import WeatherService
 from pykalman import KalmanFilter
-import os
 from dotenv import load_dotenv
-import json
 import folium
 from streamlit_folium import st_folium
 
