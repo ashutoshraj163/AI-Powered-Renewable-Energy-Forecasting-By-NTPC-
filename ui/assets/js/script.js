@@ -56,7 +56,7 @@ async function registerUser(event) {
 
     if (data.success) {
         alert("Registration successful! You can now log in.");
-        window.location.href = "login.html";
+        window.location.href = "Login.html";
     } else {
         alert("Username already exists!");
     }
